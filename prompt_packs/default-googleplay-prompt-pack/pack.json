@@ -1,0 +1,99 @@
+{
+  "pack_name": "default-googleplay-prompt-pack",
+  "mode": "html_screenshot_generation",
+  "notes": "Default local HTML prompt templates for generating Google Play style vertical market screenshots from user-provided app screenshots.",
+  "canvas": {
+    "width": 1242,
+    "height": 2208
+  },
+  "templates": [
+    {
+      "name": "xiaohongshu-clean-discover-phone",
+      "layout": "clean-discover-phone",
+      "headline_small": "发现",
+      "headline_large": "多元兴趣方式",
+      "prompt": "画布是竖版商店图，白到浅灰背景，整体很干净。顶部是营销文案，两行结构：小字 发现，大字 多元兴趣方式。中间是一个大手机 mockup，占画面核心位置。手机里放的是 App 首页截图，截图被裁进手机屏幕区域。底部保留手机导航栏和红色加号按钮，强化产品识别。背景没有复杂装饰，只靠轻微阴影和手机圆角制造质感。"
+    },
+    {
+      "name": "purple-live-phone",
+      "layout": "purple-live-phone",
+      "headline_small": "发现新直播",
+      "headline_large": "剪辑与故事",
+      "prompt": "画布是竖版商店图，紫粉渐变背景，带舞台灯光和娱乐直播氛围。顶部中间是两行黑色文案：发现新直播 / 剪辑与故事。主体是一个居中偏下的大手机截图，黑色手机外框加青绿色描边。右侧叠加 3D LIVE 标签，右下角有直播设备或调音台元素，左上角有白色发光星形装饰，右上角有浅色 3D 云朵装饰。整体适合直播、视频、社区、娱乐、游戏类 App。"
+    },
+    {
+      "name": "spotify-pink-series",
+      "layout": "spotify-pink-series",
+      "brand": "Spotify",
+      "variants": [
+        {
+          "headline": "音乐和播客\n一网打尽",
+          "tilt": "-1deg",
+          "phone_top": "520px"
+        },
+        {
+          "headline": "寻找心仪的播客",
+          "tilt": "7deg",
+          "phone_top": "520px"
+        },
+        {
+          "headline": "为你精心挑选的歌单",
+          "tilt": "-2deg",
+          "phone_top": "506px"
+        }
+      ],
+      "prompt": "画布是竖版商店图，左右有绿色模糊边缘，中间是粉色主画布。第 1 张顶部带 Spotify 品牌和文案：音乐和播客 / 一网打尽，手机居中偏下。第 2 张顶部文案：寻找心仪的播客，手机轻微倾斜，黑色播放界面更突出。第 3 张顶部文案：为你精心挑选的歌单，手机样式保持稳定。第 3 张之后都复用第 3 张样式。整体适合音乐、播客、内容流媒体类 App。"
+    },
+    {
+      "name": "element-dark-glow-series",
+      "layout": "element-dark-glow-series",
+      "variants": [
+        {
+          "kind": "icon",
+          "headline_top": "The\nfastest",
+          "headline_bottom": "Element\never.",
+          "caption_position": "bottom"
+        },
+        {
+          "kind": "phone",
+          "headline": "Easier\nthan ever.",
+          "caption_position": "top",
+          "tilt": "0deg",
+          "phone_top": "438px",
+          "phone_width": "680px",
+          "phone_height": "1350px"
+        },
+        {
+          "kind": "phone",
+          "headline": "Secure and\nencrypted.",
+          "caption_position": "bottom",
+          "tilt": "0deg",
+          "phone_top": "118px",
+          "phone_width": "650px",
+          "phone_height": "1370px",
+          "screen_bg": "#f7f8fb"
+        },
+        {
+          "kind": "phone",
+          "headline": "Simply start\nchatting.",
+          "caption_position": "top",
+          "tilt": "0deg",
+          "phone_top": "404px",
+          "phone_width": "684px",
+          "phone_height": "1392px"
+        },
+        {
+          "kind": "phone",
+          "headline": "Connect in\nreal time.",
+          "caption_position": "bottom",
+          "tilt": "0deg",
+          "phone_top": "104px",
+          "phone_width": "650px",
+          "phone_height": "1378px",
+          "screen_bg": "#f8f8f8"
+        }
+      ],
+      "prompt": "画布是竖版商店图，整体深黑背景，左右有青绿色和蓝色霓虹光晕。白色粗体英文短句作为主文案。第 1 张是应用图标 hero：顶部 The fastest，中间发光绿色图标，底部 Element ever.。第 2 张是聊天列表手机截图，顶部 Easier than ever.。第 3 张是浅色输入/键盘手机截图，底部 Secure and encrypted.。第 4 张是深色聊天手机截图，顶部 Simply start chatting.。第 5 张是实时通话手机截图，底部 Connect in real time.。整体适合通讯、聊天、安全、协作类 App。"
+    }
+  ]
+}
