@@ -249,6 +249,12 @@ def default_titles(template: dict, copy: str, index: int) -> tuple[str, str]:
             str(template.get("headline_small") or "发现新直播"),
             str(template.get("headline_large") or "剪辑与故事"),
         )
+    if layout == "douyin-deal-card":
+        return split_copy(
+            copy,
+            str(template.get("headline_small") or "额外加料！"),
+            str(template.get("headline_large") or "同款更低价"),
+        )
     if layout == "spotify-pink-series":
         _, headline, eyebrow, _, _ = spotify_defaults(template, index)
         if copy.strip():
@@ -846,6 +852,381 @@ def render_purple_live_html(
 """
 
 
+def render_douyin_deal_card_html(
+    *,
+    screenshot_path: Path,
+    template: dict,
+    copy: str,
+    width: int,
+    height: int,
+) -> str:
+    small, large = split_copy(
+        copy,
+        str(template.get("headline_small") or "额外加料！"),
+        str(template.get("headline_large") or "同款更低价"),
+    )
+    img_src = image_data_uri(screenshot_path)
+    small_html = html.escape(small)
+    large_html = html.escape(large)
+    shot_width = 700
+    shot_height = 1539
+    if Image is not None:
+        try:
+            with Image.open(screenshot_path) as img:
+                source_width, source_height = img.size
+            if source_width > 0 and source_height > 0:
+                ratio = source_width / source_height
+                max_width = 760
+                max_height = 1540
+                shot_width = min(max_width, int(round(max_height * ratio)))
+                shot_height = int(round(shot_width / ratio))
+        except Exception:
+            pass
+    card_width = shot_width + 104
+    card_height = shot_height + 104
+    float_height = 342
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width={width}, initial-scale=1">
+  <style>
+    * {{ box-sizing: border-box; }}
+    html, body {{
+      margin: 0;
+      width: {width}px;
+      height: {height}px;
+      overflow: hidden;
+      background: #ff2367;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }}
+    .canvas {{
+      position: relative;
+      width: {width}px;
+      height: {height}px;
+      overflow: hidden;
+      --shot-width: {shot_width}px;
+      --shot-height: {shot_height}px;
+      --card-width: {card_width}px;
+      --card-height: {card_height}px;
+      --float-width: calc(var(--card-width) + 132px);
+      --float-height: {float_height}px;
+      background:
+        radial-gradient(circle at 10% 18%, rgba(255,255,255,.25) 0 2px, transparent 3px),
+        radial-gradient(circle at 86% 18%, rgba(255,255,255,.18), transparent 32%),
+        linear-gradient(158deg, #ff2b7c 0%, #ff225f 45%, #fa315d 72%, #ec1f5c 100%);
+      background-size: 26px 26px, auto, auto;
+    }}
+    .canvas::before {{
+      content: "";
+      position: absolute;
+      right: -48px;
+      bottom: 58px;
+      width: 442px;
+      height: 442px;
+      opacity: .18;
+      transform: rotate(-16deg);
+      background:
+        linear-gradient(45deg, rgba(255,255,255,.55) 25%, transparent 25% 75%, rgba(255,255,255,.55) 75%),
+        linear-gradient(45deg, rgba(255,255,255,.55) 25%, transparent 25% 75%, rgba(255,255,255,.55) 75%);
+      background-position: 0 0, 20px 20px;
+      background-size: 40px 40px;
+      border-radius: 48px;
+    }}
+    .canvas::after {{
+      content: "";
+      position: absolute;
+      left: -160px;
+      top: 660px;
+      width: 520px;
+      height: 520px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.10);
+      filter: blur(2px);
+    }}
+    .tiny-copy {{
+      position: absolute;
+      top: 30px;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      color: rgba(255,255,255,.62);
+      font-size: 22px;
+      letter-spacing: .18em;
+      font-weight: 600;
+    }}
+    .deal-tag {{
+      position: absolute;
+      top: 164px;
+      left: 50%;
+      transform: translateX(-50%) rotate(-3deg);
+      min-width: 210px;
+      height: 64px;
+      padding: 0 30px;
+      border-radius: 10px;
+      background: #090909;
+      color: #fff;
+      font-size: 34px;
+      line-height: 64px;
+      font-weight: 900;
+      text-align: center;
+      letter-spacing: -.03em;
+      box-shadow: 0 10px 0 rgba(0,0,0,.16);
+      z-index: 4;
+    }}
+    .deal-tag::after,
+    .deal-tag::before {{
+      content: "";
+      position: absolute;
+      right: -42px;
+      background: #101010;
+      transform-origin: left center;
+    }}
+    .deal-tag::before {{
+      top: 4px;
+      width: 54px;
+      height: 12px;
+      transform: rotate(24deg);
+      border-radius: 8px;
+    }}
+    .deal-tag::after {{
+      top: 34px;
+      width: 38px;
+      height: 10px;
+      transform: rotate(-18deg);
+      border-radius: 8px;
+    }}
+    .headline {{
+      position: absolute;
+      top: 238px;
+      left: 0;
+      width: 100%;
+      color: #fff;
+      text-align: center;
+      font-size: 86px;
+      line-height: .96;
+      font-weight: 1000;
+      letter-spacing: -.08em;
+      text-shadow:
+        0 5px 0 rgba(202, 22, 73, .42),
+        0 18px 36px rgba(105, 0, 29, .22);
+      z-index: 3;
+    }}
+    .headline::after {{
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -32px;
+      width: 330px;
+      height: 36px;
+      transform: translateX(-50%) rotate(-4deg);
+      background: #ffd753;
+      clip-path: polygon(0 50%, 18% 34%, 36% 55%, 54% 30%, 72% 52%, 100% 35%, 100% 62%, 72% 77%, 54% 55%, 36% 82%, 18% 58%, 0 74%);
+      opacity: .96;
+      z-index: -1;
+    }}
+    .app-card {{
+      position: absolute;
+      left: 50%;
+      top: 448px;
+      width: var(--card-width);
+      height: var(--card-height);
+      transform: translateX(-50%);
+      border-radius: 78px;
+      background: #fff;
+      box-shadow:
+        0 50px 90px rgba(132, 0, 48, .30),
+        inset 0 0 0 10px rgba(255,255,255,.82);
+      overflow: visible;
+      z-index: 2;
+    }}
+    .app-card::before {{
+      content: "";
+      position: absolute;
+      inset: 18px;
+      border-radius: 62px;
+      border: 2px solid rgba(238, 56, 100, .22);
+      pointer-events: none;
+      z-index: 5;
+    }}
+    .screen-shell {{
+      position: absolute;
+      left: 50%;
+      top: 52px;
+      width: var(--shot-width);
+      height: var(--shot-height);
+      transform: translateX(-50%);
+      border-radius: 38px;
+      background: #fff;
+      overflow: hidden;
+      z-index: 2;
+    }}
+    .screen {{
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: #fff;
+      z-index: 1;
+    }}
+    .screen img {{
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center top;
+    }}
+    .canvas > .float-deal {{
+      position: absolute;
+      left: 50%;
+      top: 836px;
+      width: var(--float-width);
+      height: var(--float-height);
+      border-radius: 44px;
+      background: white;
+      box-shadow:
+        0 46px 92px rgba(117, 0, 37, .34),
+        0 18px 36px rgba(255, 37, 92, .22),
+        0 0 0 5px rgba(255, 49, 101, .18);
+      transform: translateX(-50%) rotate(-1.8deg) scale(1.045);
+      transform-origin: center center;
+      z-index: 8;
+      overflow: hidden;
+    }}
+    .float-deal::before {{
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 44px;
+      background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(255,255,255,.94));
+      box-shadow: inset 0 0 0 2px rgba(255, 61, 105, .12);
+      z-index: -1;
+    }}
+    .float-deal .photo {{
+      position: absolute;
+      left: 32px;
+      top: 34px;
+      width: 218px;
+      height: 218px;
+      border-radius: 28px;
+      background:
+        radial-gradient(circle at 34% 30%, #f7d7a9, transparent 36%),
+        linear-gradient(135deg, #b96f33, #f6d39a);
+    }}
+    .float-deal .copy {{
+      position: absolute;
+      left: 284px;
+      top: 48px;
+      right: 142px;
+      color: #2b2022;
+      font-size: 36px;
+      line-height: 1.16;
+      font-weight: 900;
+    }}
+    .float-deal .meta {{
+      position: absolute;
+      left: 284px;
+      top: 138px;
+      right: 142px;
+      color: #96878b;
+      font-size: 23px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }}
+    .float-deal .price {{
+      position: absolute;
+      left: 284px;
+      bottom: 48px;
+      color: #161012;
+      font-size: 56px;
+      font-weight: 950;
+      letter-spacing: -.04em;
+    }}
+    .float-deal .price small {{
+      color: #8c7c80;
+      font-size: 21px;
+      text-decoration: line-through;
+      margin-left: 8px;
+    }}
+    .save-ribbon {{
+      position: absolute;
+      left: -22px;
+      bottom: 26px;
+      width: 236px;
+      height: 70px;
+      transform: rotate(-6deg);
+      border-radius: 0 28px 28px 0;
+      background: linear-gradient(90deg, #ff2a66, #ff6b86);
+      color: #fff;
+      text-align: center;
+      line-height: 70px;
+      font-weight: 1000;
+      font-size: 34px;
+      text-shadow: 0 2px 0 rgba(150,0,42,.24);
+    }}
+    .float-deal .grab-main {{
+      position: absolute;
+      right: 20px;
+      top: 118px;
+      width: 124px;
+      height: 124px;
+      border-radius: 28px;
+      background: linear-gradient(180deg, #ff457a, #ff1d5b);
+      color: #fff;
+      text-align: center;
+      line-height: 124px;
+      font-size: 70px;
+      font-weight: 1000;
+      box-shadow: 0 18px 30px rgba(219, 0, 64, .28);
+    }}
+    .grab {{
+      position: absolute;
+      right: 42px;
+      border-radius: 16px;
+      width: 68px;
+      height: 68px;
+      background: linear-gradient(180deg, #ff457a, #ff1d5b);
+      color: #fff;
+      text-align: center;
+      line-height: 68px;
+      font-size: 38px;
+      font-weight: 1000;
+      box-shadow: 0 18px 30px rgba(219, 0, 64, .28);
+      z-index: 5;
+    }}
+    .grab.g1 {{ top: 692px; }}
+    .grab.g2 {{ top: 950px; }}
+    .grab.g3 {{ top: 1208px; }}
+  </style>
+</head>
+<body>
+  <main class="canvas">
+    <div class="tiny-copy">图片仅供示例，以 APP 内实际展示为准</div>
+    <div class="deal-tag">{small_html}</div>
+    <section class="headline">{large_html}</section>
+    <section class="app-card">
+      <div class="screen-shell">
+        <div class="screen"><img src="{img_src}" alt=""></div>
+        <div class="grab g1">抢</div>
+        <div class="grab g2">抢</div>
+        <div class="grab g3">抢</div>
+      </div>
+    </section>
+    <div class="float-deal">
+      <div class="photo"></div>
+      <div class="copy">今日好价<br>附近热门推荐</div>
+      <div class="meta">&lt;100m 精选优惠 · 热销3万+</div>
+      <div class="price">¥16.2<small>¥30.2</small></div>
+      <div class="save-ribbon">超省价!</div>
+      <div class="grab-main">抢</div>
+    </div>
+  </main>
+</body>
+</html>
+"""
+
+
 def spotify_defaults(template: dict, index: int) -> tuple[str, str, str, str, str]:
     variants = template.get("variants")
     selected = None
@@ -1318,6 +1699,14 @@ def render_html(
         )
     if layout == "purple-live-phone":
         return render_purple_live_html(
+            screenshot_path=screenshot_path,
+            template=template,
+            copy=copy,
+            width=width,
+            height=height,
+        )
+    if layout == "douyin-deal-card":
+        return render_douyin_deal_card_html(
             screenshot_path=screenshot_path,
             template=template,
             copy=copy,

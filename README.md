@@ -13,6 +13,12 @@ The main workflow is browser-first:
 
 No Gemini key, image-generation API, or remote rendering service is required.
 
+## Quality Rules
+
+Generated Google Play images must preserve the original aspect ratio of every provided screenshot. Templates should scale the screenshot and surrounding frame together so the final `1242x2208` composition looks intentional, not like a low-effort collage.
+
+Decorative overlays such as 3D labels, floating cards, and badges are allowed only when they support the app screenshot. They must not stretch the screenshot, hide important UI, or dominate the product hero.
+
 ## Start Web Service
 
 ```bash
