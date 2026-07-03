@@ -90,6 +90,52 @@ def list_prompt_packs() -> list[dict]:
     return packs
 
 
+def iter_catalog_templates() -> list[dict]:
+    catalog: list[dict] = []
+    if not PROMPT_PACKS_DIR.exists():
+        return catalog
+    for pack_dir in sorted(PROMPT_PACKS_DIR.iterdir()):
+        if not pack_dir.is_dir() or not (pack_dir / "pack.json").exists():
+            continue
+        try:
+            pack = load_pack(pack_dir)
+        except Exception:
+            continue
+        pack_name = str(pack.get("pack_name") or pack_dir.name)
+        for item in pack.get("templates") or []:
+            if not isinstance(item, dict) or not item.get("name"):
+                continue
+            catalog.append(
+                {
+                    "pack_name": pack_name,
+                    "pack_dir": str(pack_dir.resolve()),
+                    "template_name": str(item["name"]),
+                    "layout": str(item.get("layout") or ""),
+                    "prompt": str(item.get("prompt") or ""),
+                }
+            )
+    return catalog
+
+
+def resolve_template_selection(template_name: str) -> tuple[dict, str]:
+    matches: list[tuple[dict, str]] = []
+    if not PROMPT_PACKS_DIR.exists():
+        raise RuntimeError(f"Unknown template: {template_name}")
+    for pack_dir in sorted(PROMPT_PACKS_DIR.iterdir()):
+        if not pack_dir.is_dir() or not (pack_dir / "pack.json").exists():
+            continue
+        pack = load_pack(pack_dir)
+        for item in pack.get("templates") or []:
+            if isinstance(item, dict) and str(item.get("name") or "") == template_name:
+                matches.append((pack, template_name))
+    if not matches:
+        raise RuntimeError(f"Unknown template: {template_name}")
+    if len(matches) > 1:
+        pack_names = ", ".join(sorted({str(p.get("pack_name") or "") for p, _ in matches}))
+        raise RuntimeError(f"Template name {template_name!r} is ambiguous across packs: {pack_names}")
+    return matches[0]
+
+
 def sorted_input_images(folder: Path) -> list[Path]:
     if not folder.exists() or not folder.is_dir():
         raise RuntimeError(f"Screenshots directory does not exist: {folder}")
@@ -191,10 +237,11 @@ def override_for_index(overrides: dict[str, dict], index: int) -> dict:
 def default_titles(template: dict, copy: str, index: int) -> tuple[str, str]:
     layout = str(template.get("layout") or "clean-discover-phone")
     if layout == "clean-discover-phone":
+        variant = clean_discover_defaults(template, index)
         return split_copy(
             copy,
-            str(template.get("headline_small") or "发现"),
-            str(template.get("headline_large") or "多元兴趣方式"),
+            variant["headline_small"],
+            variant["headline_large"].replace("\\n", "\n"),
         )
     if layout == "purple-live-phone":
         return split_copy(
@@ -265,6 +312,97 @@ def image_data_uri(path: Path) -> str:
     return f"data:{mime_type};base64,{data}"
 
 
+def _clamp_byte(value: float) -> int:
+    return max(0, min(255, int(round(value))))
+
+
+def _rgb_to_hex(r: int, g: int, b: int) -> str:
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _mix_rgb(a: tuple[int, int, int], b: tuple[int, int, int], ratio: float) -> tuple[int, int, int]:
+    ratio = max(0.0, min(1.0, ratio))
+    inv = 1.0 - ratio
+    return (
+        _clamp_byte(a[0] * inv + b[0] * ratio),
+        _clamp_byte(a[1] * inv + b[1] * ratio),
+        _clamp_byte(a[2] * inv + b[2] * ratio),
+    )
+
+
+def extract_accent_palette(screenshot_path: Path) -> dict[str, str]:
+    defaults = {
+        "accent": "#5566ff",
+        "accent_soft": "rgba(85, 102, 255, 0.14)",
+        "accent_glow": "rgba(85, 102, 255, 0.22)",
+        "bg_top": "#fbfcfe",
+        "bg_bottom": "#eef1f7",
+        "ink": "#12141a",
+        "ink_muted": "#5d6472",
+    }
+    if Image is None:
+        return defaults
+    try:
+        with Image.open(screenshot_path) as img:
+            img = img.convert("RGB")
+            img = img.resize((56, 56))
+            pixels = list(img.getdata())
+    except Exception:
+        return defaults
+
+    scored: list[tuple[float, tuple[int, int, int]]] = []
+    for r, g, b in pixels:
+        rn, gn, bn = r / 255.0, g / 255.0, b / 255.0
+        max_c = max(rn, gn, bn)
+        min_c = min(rn, gn, bn)
+        delta = max_c - min_c
+        lightness = (max_c + min_c) / 2.0
+        if delta < 0.08 or lightness < 0.12 or lightness > 0.92:
+            continue
+        saturation = delta / max(0.001, 1.0 - abs(2.0 * lightness - 1.0))
+        scored.append((saturation * (1.0 - abs(lightness - 0.52)), (r, g, b)))
+    if not scored:
+        return defaults
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    top = [rgb for _, rgb in scored[: max(8, len(scored) // 5)]]
+    accent = (
+        sum(item[0] for item in top) // len(top),
+        sum(item[1] for item in top) // len(top),
+        sum(item[2] for item in top) // len(top),
+    )
+    bg_top = _mix_rgb(accent, (255, 255, 255), 0.92)
+    bg_bottom = _mix_rgb(accent, (238, 241, 247), 0.72)
+    return {
+        "accent": _rgb_to_hex(*accent),
+        "accent_soft": f"rgba({accent[0]}, {accent[1]}, {accent[2]}, 0.14)",
+        "accent_glow": f"rgba({accent[0]}, {accent[1]}, {accent[2]}, 0.24)",
+        "bg_top": _rgb_to_hex(*bg_top),
+        "bg_bottom": _rgb_to_hex(*bg_bottom),
+        "ink": "#12141a",
+        "ink_muted": _rgb_to_hex(*_mix_rgb(accent, (93, 100, 114), 0.78)),
+    }
+
+
+def clean_discover_defaults(template: dict, index: int) -> dict:
+    variants = template.get("variants")
+    selected: dict = {}
+    if isinstance(variants, list) and variants:
+        selected = variants[min(index - 1, len(variants) - 1)]
+        if not isinstance(selected, dict):
+            selected = {}
+    return {
+        "headline_small": str(selected.get("headline_small") or template.get("headline_small") or "更快上手"),
+        "headline_large": str(selected.get("headline_large") or template.get("headline_large") or "核心功能\n一目了然"),
+        "phone_tilt": str(selected.get("phone_tilt") or "-2.5deg"),
+        "phone_top": str(selected.get("phone_top") or "462px"),
+        "phone_shift_x": str(selected.get("phone_shift_x") or "36px"),
+        "copy_left": str(selected.get("copy_left") or "84px"),
+        "copy_top": str(selected.get("copy_top") or "128px"),
+        "badge": str(selected.get("badge") or ""),
+    }
+
+
 def render_clean_discover_html(
     *,
     screenshot_path: Path,
@@ -272,18 +410,33 @@ def render_clean_discover_html(
     copy: str,
     width: int,
     height: int,
+    index: int = 1,
 ) -> str:
-    default_small = str(template.get("headline_small") or "发现")
-    default_large = str(template.get("headline_large") or "多元兴趣方式")
-    small, large = split_copy(copy, default_small, default_large)
+    variant = clean_discover_defaults(template, index)
+    small, large = split_copy(
+        copy,
+        variant["headline_small"],
+        variant["headline_large"].replace("\\n", "\n"),
+    )
+    palette = extract_accent_palette(screenshot_path)
     img_src = image_data_uri(screenshot_path)
     small_html = html.escape(small)
-    large_html = html.escape(large)
+    large_lines = [html.escape(part) for part in large.splitlines() if part.strip()]
+    if not large_lines:
+        large_lines = [html.escape(large)]
+    large_html = "<br>".join(large_lines)
+    badge_html = html.escape(variant["badge"]) if variant["badge"] else ""
+    badge_block = (
+        f'<span class="badge">{badge_html}</span>' if badge_html else ""
+    )
     return f"""<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width={width}, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,500;0,9..40,700;0,9..40,800;1,9..40,500&family=Noto+Sans+SC:wght@500;700;900&display=swap" rel="stylesheet">
   <style>
     * {{ box-sizing: border-box; }}
     html, body {{
@@ -291,8 +444,8 @@ def render_clean_discover_html(
       width: {width}px;
       height: {height}px;
       overflow: hidden;
-      background: #f7f8fa;
-      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: {palette["bg_top"]};
+      font-family: "DM Sans", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
     }}
     .canvas {{
       position: relative;
@@ -300,66 +453,121 @@ def render_clean_discover_html(
       height: {height}px;
       overflow: hidden;
       background:
-        radial-gradient(circle at 50% 52%, rgba(0, 0, 0, 0.055), rgba(0, 0, 0, 0) 34%),
-        linear-gradient(180deg, #ffffff 0%, #f5f6f8 72%, #eef0f3 100%);
+        radial-gradient(circle at 18% 14%, {palette["accent_glow"]}, transparent 28%),
+        radial-gradient(circle at 88% 18%, rgba(255,255,255,.72), transparent 24%),
+        radial-gradient(circle at 72% 82%, {palette["accent_soft"]}, transparent 34%),
+        linear-gradient(165deg, {palette["bg_top"]} 0%, {palette["bg_bottom"]} 100%);
+    }}
+    .grain {{
+      position: absolute;
+      inset: 0;
+      opacity: .08;
+      background-image:
+        linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(0,0,0,.025) 1px, transparent 1px);
+      background-size: 28px 28px;
+      mask-image: radial-gradient(circle at 50% 42%, #000, transparent 78%);
+      pointer-events: none;
+    }}
+    .accent-line {{
+      position: absolute;
+      left: {variant["copy_left"]};
+      top: calc({variant["copy_top"]} + 8px);
+      width: 56px;
+      height: 6px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, {palette["accent"]}, rgba(255,255,255,0));
+      z-index: 3;
     }}
     .copy {{
       position: absolute;
-      top: 118px;
-      left: 0;
-      width: 100%;
-      text-align: center;
-      color: #202124;
-      letter-spacing: -0.03em;
-      z-index: 2;
+      top: {variant["copy_top"]};
+      left: {variant["copy_left"]};
+      width: calc(100% - 120px);
+      text-align: left;
+      color: {palette["ink"]};
+      z-index: 3;
+    }}
+    .badge {{
+      display: inline-block;
+      margin-bottom: 18px;
+      padding: 10px 18px;
+      border-radius: 999px;
+      background: {palette["accent_soft"]};
+      color: {palette["accent"]};
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
     }}
     .copy-small {{
-      font-size: 56px;
-      line-height: 1.2;
-      font-weight: 400;
-      margin-bottom: 22px;
+      font-size: 34px;
+      line-height: 1.25;
+      font-weight: 500;
+      color: {palette["ink_muted"]};
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      margin-bottom: 18px;
     }}
     .copy-large {{
-      font-size: 82px;
-      line-height: 1.08;
-      font-weight: 800;
+      font-size: 92px;
+      line-height: 1.02;
+      font-weight: 900;
+      letter-spacing: -0.045em;
+      max-width: 760px;
+      text-wrap: balance;
     }}
     .phone-shadow {{
       position: absolute;
-      left: 50%;
-      top: 482px;
-      width: 760px;
-      height: 1570px;
-      transform: translateX(-50%);
-      border-radius: 92px;
-      background: rgba(0, 0, 0, 0.06);
-      filter: blur(28px);
+      left: calc(50% + {variant["phone_shift_x"]});
+      top: calc({variant["phone_top"]} + 28px);
+      width: 748px;
+      height: 1540px;
+      transform: translateX(-50%) rotate({variant["phone_tilt"]});
+      border-radius: 88px;
+      background: rgba(18, 20, 26, 0.18);
+      filter: blur(34px);
       z-index: 0;
     }}
     .phone {{
       position: absolute;
-      left: 50%;
-      top: 454px;
-      width: 760px;
-      height: 1588px;
-      transform: translateX(-50%);
-      border-radius: 92px;
-      background: #ffffff;
+      left: calc(50% + {variant["phone_shift_x"]});
+      top: {variant["phone_top"]};
+      width: 748px;
+      height: 1568px;
+      transform: translateX(-50%) rotate({variant["phone_tilt"]});
+      border-radius: 88px;
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.98), rgba(244,246,250,.92));
       box-shadow:
-        0 34px 80px rgba(27, 31, 36, 0.14),
-        inset 0 0 0 10px rgba(255, 255, 255, 0.95),
-        inset 0 0 0 16px rgba(232, 235, 239, 0.82);
-      z-index: 1;
+        0 48px 96px rgba(18, 20, 26, 0.16),
+        0 0 0 1px rgba(255,255,255,.72),
+        inset 0 0 0 12px rgba(255,255,255,.96),
+        inset 0 0 0 14px rgba(226, 230, 238, 0.88);
+      z-index: 2;
+    }}
+    .phone::before {{
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 24px;
+      width: 168px;
+      height: 34px;
+      transform: translateX(-50%);
+      border-radius: 999px;
+      background: rgba(12, 14, 18, 0.92);
+      z-index: 4;
     }}
     .screen {{
       position: absolute;
-      left: 55px;
-      top: 58px;
-      width: 650px;
-      height: 1430px;
-      border-radius: 52px;
+      left: 52px;
+      top: 56px;
+      width: 644px;
+      height: 1418px;
+      border-radius: 48px;
       overflow: hidden;
       background: #ffffff;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.65);
     }}
     .screen img {{
       width: 100%;
@@ -367,22 +575,38 @@ def render_clean_discover_html(
       object-fit: cover;
       object-position: center top;
       display: block;
+      filter: contrast(1.03) saturate(1.04);
     }}
     .glass {{
       pointer-events: none;
       position: absolute;
       inset: 0;
-      border-radius: 92px;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.95);
+      border-radius: 88px;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.98),
+        inset 0 -18px 40px rgba(255,255,255,.08);
+    }}
+    .floor {{
+      position: absolute;
+      left: -10%;
+      right: -10%;
+      bottom: -120px;
+      height: 320px;
+      background: radial-gradient(circle at 50% 0%, {palette["accent_soft"]}, transparent 68%);
+      z-index: 1;
     }}
   </style>
 </head>
 <body>
   <main class="canvas">
+    <div class="grain"></div>
+    <div class="accent-line"></div>
     <section class="copy">
+      {badge_block}
       <div class="copy-small">{small_html}</div>
       <div class="copy-large">{large_html}</div>
     </section>
+    <div class="floor"></div>
     <div class="phone-shadow"></div>
     <section class="phone" aria-label="phone mockup">
       <div class="screen"><img src="{img_src}" alt=""></div>
@@ -1090,6 +1314,7 @@ def render_html(
             copy=copy,
             width=width,
             height=height,
+            index=index,
         )
     if layout == "purple-live-phone":
         return render_purple_live_html(
@@ -1244,6 +1469,7 @@ def write_preview_index(output_dir: Path, jobs: list[dict], width: int, height: 
     scale = 0.235
     preview_w = int(width * scale)
     preview_h = int(height * scale)
+    template_name = html.escape(str(jobs[0]["template"])) if jobs else ""
     cards: list[str] = []
     for job in jobs:
         rel_html = Path(job["html"]).relative_to(output_dir).as_posix()
@@ -1286,6 +1512,38 @@ def write_preview_index(output_dir: Path, jobs: list[dict], width: int, height: 
     header {{
       max-width: 1180px;
       margin: 0 auto 28px;
+    }}
+    .back-link {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 14px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.88);
+      box-shadow: 0 8px 24px rgba(25,31,45,.08);
+      color: #2868f0;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+    }}
+    .back-link:hover {{
+      background: #fff;
+    }}
+    .header-meta {{
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 10px 16px;
+    }}
+    .template-tag {{
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(40,104,240,.10);
+      color: #2868f0;
+      font-size: 12px;
+      font-weight: 700;
     }}
     h1 {{
       margin: 0 0 8px;
@@ -1379,11 +1637,81 @@ def write_preview_index(output_dir: Path, jobs: list[dict], width: int, height: 
       color: #626977;
       font-size: 14px;
     }}
+    .gen-overlay {{
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: grid;
+      place-items: center;
+      background: rgba(12, 16, 24, .58);
+      backdrop-filter: blur(8px);
+      opacity: 1;
+      transition: opacity .25s ease;
+    }}
+    .gen-overlay.hidden {{
+      opacity: 0;
+      pointer-events: none;
+    }}
+    .gen-panel {{
+      width: min(420px, calc(100vw - 48px));
+      padding: 28px 26px 24px;
+      border-radius: 24px;
+      background: rgba(255,255,255,.96);
+      box-shadow: 0 28px 80px rgba(0,0,0,.28);
+      text-align: center;
+    }}
+    .gen-panel strong {{
+      display: block;
+      font-size: 20px;
+      margin-bottom: 10px;
+    }}
+    #gen-message {{
+      margin: 0 0 18px;
+      color: #626977;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 42px;
+    }}
+    .gen-progress {{
+      height: 8px;
+      border-radius: 999px;
+      background: #e8ecf3;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }}
+    #gen-bar {{
+      height: 100%;
+      width: 0%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #2868f0, #7c5cff);
+      transition: width .25s ease;
+    }}
+    #gen-count {{
+      margin: 0;
+      color: #768092;
+      font-size: 13px;
+    }}
+    .spinner {{
+      width: 42px;
+      height: 42px;
+      margin: 0 auto 16px;
+      border-radius: 50%;
+      border: 3px solid #e8ecf3;
+      border-top-color: #2868f0;
+      animation: spin .9s linear infinite;
+    }}
+    @keyframes spin {{
+      to {{ transform: rotate(360deg); }}
+    }}
   </style>
 </head>
 <body>
   <header>
-    <h1>Market Preview</h1>
+    <a class="back-link" href="/">← 返回选模板</a>
+    <div class="header-meta">
+      <h1>Market Preview</h1>
+      {f'<span class="template-tag">{template_name}</span>' if template_name else ''}
+    </div>
     <p>先检查 HTML 预览，可点 Edit 调整。满意后点击底部确认按钮，系统会直接截图导出 PNG。</p>
   </header>
   <main class="grid">
@@ -1396,23 +1724,99 @@ def write_preview_index(output_dir: Path, jobs: list[dict], width: int, height: 
     </div>
     <button id="confirm">确认生成截图</button>
   </section>
+  <div id="gen-overlay" class="gen-overlay hidden" aria-hidden="true">
+    <div class="gen-panel" role="status" aria-live="polite">
+      <div class="spinner"></div>
+      <strong id="gen-title">正在生成市场图</strong>
+      <p id="gen-message">准备中，请勿关闭页面…</p>
+      <div class="gen-progress"><div id="gen-bar"></div></div>
+      <p id="gen-count">0 / 0</p>
+    </div>
+  </div>
   <script>
     const button = document.querySelector('#confirm');
     const status = document.querySelector('#status');
-    button.addEventListener('click', async () => {{
-      button.disabled = true;
-      status.textContent = '正在截图导出，请稍等...';
-      try {{
-        const res = await fetch('/api/confirm-generate', {{ method: 'POST' }});
+    const overlay = document.querySelector('#gen-overlay');
+    const genMessage = document.querySelector('#gen-message');
+    const genBar = document.querySelector('#gen-bar');
+    const genCount = document.querySelector('#gen-count');
+
+    function showOverlay() {{
+      overlay.classList.remove('hidden');
+      overlay.setAttribute('aria-hidden', 'false');
+    }}
+
+    function hideOverlay() {{
+      overlay.classList.add('hidden');
+      overlay.setAttribute('aria-hidden', 'true');
+    }}
+
+    function updateProgress(evt) {{
+      const total = Number(evt.total || 0);
+      const current = Number(evt.current || 0);
+      if (evt.message) genMessage.textContent = evt.message;
+      if (total > 0) {{
+        genCount.textContent = current + ' / ' + total;
+        const pct = Math.max(4, Math.min(100, Math.round((current / total) * 100)));
+        genBar.style.width = pct + '%';
+      }}
+    }}
+
+    async function readProgressStream(res) {{
+      if (!res.body || !res.body.getReader) {{
         const text = await res.text();
         if (!res.ok) throw new Error(text);
-        const data = JSON.parse(text);
+        return JSON.parse(text);
+      }}
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalPayload = null;
+      while (true) {{
+        const {{ done, value }} = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, {{ stream: true }});
+        const lines = buffer.split('\\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {{
+          if (!line.trim()) continue;
+          const evt = JSON.parse(line);
+          if (evt.type === 'progress') updateProgress(evt);
+          if (evt.type === 'result') finalPayload = evt.data;
+          if (evt.type === 'error') throw new Error(evt.message || '生成失败');
+        }}
+      }}
+      if (!finalPayload) throw new Error('未收到生成结果');
+      return finalPayload;
+    }}
+
+    button.addEventListener('click', async () => {{
+      button.disabled = true;
+      showOverlay();
+      genMessage.textContent = '正在准备 HTML 预览…';
+      genBar.style.width = '4%';
+      genCount.textContent = '0 / 0';
+      status.textContent = '正在截图导出，请稍等…';
+      try {{
+        const res = await fetch('/api/confirm-generate', {{
+          method: 'POST',
+          headers: {{ 'Accept': 'application/x-ndjson' }},
+        }});
+        const data = await readProgressStream(res);
         const failed = data.failed_jobs || [];
-        status.textContent = failed.length
-          ? '部分失败：' + failed.map(item => item.index).join(', ')
-          : '已生成 ' + (data.outputs || []).length + ' 张 PNG。';
+        if (failed.length) {{
+          genMessage.textContent = '部分失败：' + failed.map(item => item.index).join(', ');
+          status.textContent = genMessage.textContent;
+        }} else {{
+          genMessage.textContent = '已完成，共生成 ' + (data.outputs || []).length + ' 张 PNG';
+          status.textContent = genMessage.textContent;
+          genBar.style.width = '100%';
+        }}
+        setTimeout(hideOverlay, failed.length ? 1800 : 900);
       }} catch (error) {{
-        status.textContent = '生成失败：' + error.message;
+        genMessage.textContent = '生成失败：' + error.message;
+        status.textContent = genMessage.textContent;
+        setTimeout(hideOverlay, 2200);
       }} finally {{
         button.disabled = false;
       }}
@@ -1610,7 +2014,8 @@ def render_edit_page(state: dict, index_key: str) -> str:
         <div class="actions">
           <button type="submit">保存并刷新预览</button>
           <button class="secondary" type="button" id="reset">重置</button>
-          <a class="button secondary" href="/">返回列表</a>
+          <a class="button secondary" href="/preview">返回预览</a>
+          <a class="button secondary" href="/">返回选模板</a>
         </div>
       </form>
     </aside>
@@ -1661,15 +2066,26 @@ def render_edit_page(state: dict, index_key: str) -> str:
 
 
 def render_template_selection_page(state: dict) -> str:
-    templates = state["pack"]["templates"]
+    selected = str(state.get("selected_template_name") or "")
+    selected_pack = str(state.get("pack", {}).get("pack_name") or "")
+    selected_banner = ""
+    if selected:
+        selected_banner = f"""
+    <p class="current">
+      当前已选：<strong>{html.escape(selected)}</strong>
+      {f'（{html.escape(selected_pack)}）' if selected_pack else ''}
+      <a href="/preview">继续预览</a>
+    </p>"""
     cards: list[str] = []
-    for item in templates:
-        name = str(item.get("name") or "")
-        layout = str(item.get("layout") or "")
-        prompt = str(item.get("prompt") or "")
+    for item in iter_catalog_templates():
+        name = item["template_name"]
+        layout = item["layout"]
+        prompt = item["prompt"]
+        pack_name = item["pack_name"]
         cards.append(
             f"""
       <article class="card">
+        <p class="pack-tag">{html.escape(pack_name)}</p>
         <h2>{html.escape(name)}</h2>
         <p class="layout">{html.escape(layout)}</p>
         <p>{html.escape(prompt[:260])}</p>
@@ -1708,6 +2124,17 @@ def render_template_selection_page(state: dict) -> str:
       margin: 0;
       color: #626977;
     }}
+    .current {{
+      margin: 10px 0 0;
+      color: #626977;
+      font-size: 14px;
+    }}
+    .current a {{
+      margin-left: 12px;
+      color: #2868f0;
+      font-weight: 700;
+      text-decoration: none;
+    }}
     .grid {{
       max-width: 1120px;
       margin: 0 auto;
@@ -1739,6 +2166,14 @@ def render_template_selection_page(state: dict) -> str:
       color: #2868f0;
       font-weight: 800;
     }}
+    .pack-tag {{
+      margin: 0;
+      color: #ff2d77;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }}
     .button {{
       margin-top: auto;
       display: inline-block;
@@ -1755,7 +2190,7 @@ def render_template_selection_page(state: dict) -> str:
 <body>
   <header>
     <h1>选择市场图模板</h1>
-    <p>先选一套模板，系统再生成 HTML 预览。预览满意后点击底部确认按钮导出 PNG。</p>
+    <p>先选一套模板，系统再生成 HTML 预览。预览满意后点击底部确认按钮导出 PNG。</p>{selected_banner}
   </header>
   <main class="grid">
 {''.join(cards)}
@@ -1785,14 +2220,43 @@ def render_all_preview_html(state: dict) -> None:
     write_preview_index(state["output_dir"], state["jobs"], state["width"], state["height"])
 
 
-def generate_png_outputs(state: dict) -> dict:
+def _emit_progress(on_progress, **payload) -> None:
+    if on_progress:
+        on_progress(payload)
+
+
+def generate_png_outputs(state: dict, on_progress=None) -> dict:
+    _emit_progress(
+        on_progress,
+        step="prepare",
+        message="正在刷新 HTML 预览…",
+        current=0,
+        total=len(state.get("screenshots") or []),
+    )
     chrome = find_chrome()
     render_all_preview_html(state)
+    jobs = state.get("jobs") or []
+    total = len(jobs)
+    _emit_progress(
+        on_progress,
+        step="chrome",
+        message="已启动 Chrome，开始逐张截图…",
+        current=0,
+        total=total,
+    )
     outputs: list[dict] = []
     failed: list[dict] = []
-    for job in state["jobs"]:
+    for step_index, job in enumerate(jobs, start=1):
         html_path = Path(job["html"])
         output_path = Path(job["output"])
+        _emit_progress(
+            on_progress,
+            step="screenshot",
+            message=f"正在截图 {job['index']}（{step_index}/{total}）…",
+            current=step_index - 1,
+            total=total,
+            index=job["index"],
+        )
         try:
             screenshot_html(chrome, html_path, output_path, state["width"], state["height"])
             validate_png_size(output_path, state["width"], state["height"])
@@ -1814,6 +2278,21 @@ def generate_png_outputs(state: dict) -> dict:
                     "error": str(exc),
                 }
             )
+        _emit_progress(
+            on_progress,
+            step="screenshot",
+            message=f"已完成 {job['index']}（{step_index}/{total}）",
+            current=step_index,
+            total=total,
+            index=job["index"],
+        )
+    _emit_progress(
+        on_progress,
+        step="done",
+        message="全部截图任务结束",
+        current=total,
+        total=total,
+    )
     return {
         "mode": "html_prompt_pack_generation",
         "pack_name": state["pack"].get("pack_name") or "prompt-pack",
@@ -1843,6 +2322,26 @@ class PreviewHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_ndjson_line(self, payload: dict) -> None:
+        self.wfile.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
+        self.wfile.flush()
+
+    def send_generate_stream(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
+        def on_progress(payload: dict) -> None:
+            self.send_ndjson_line({"type": "progress", **payload})
+
+        try:
+            result = generate_png_outputs(self.state, on_progress=on_progress)
+            self.send_ndjson_line({"type": "result", "data": result})
+        except Exception as exc:
+            self.send_ndjson_line({"type": "error", "message": str(exc)})
+
     def send_text(self, text: str, status: int = 200, content_type: str = "text/html; charset=utf-8") -> None:
         body = text.encode("utf-8")
         self.send_response(status)
@@ -1853,13 +2352,16 @@ class PreviewHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path in {"/", "/index.html"} and not self.state.get("selected_template_name"):
+        if parsed.path in {"/", "/index.html"}:
             self.send_text(render_template_selection_page(self.state))
             return
         select_match = re.fullmatch(r"/select/(.+)", parsed.path)
         if select_match:
             try:
                 name = urllib.parse.unquote(select_match.group(1))
+                pack, _ = resolve_template_selection(name)
+                self.state["pack"] = pack
+                self.state["width"], self.state["height"] = canvas_size(pack)
                 self.state["selected_template_name"] = name
                 self.state["overrides"] = load_overrides(self.state["output_dir"])
                 render_all_preview_html(self.state)
@@ -1905,7 +2407,11 @@ class PreviewHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 return
             try:
                 self.state["overrides"] = load_overrides(self.state["output_dir"])
-                self.send_json(generate_png_outputs(self.state))
+                accept = (self.headers.get("Accept") or "").lower()
+                if "application/x-ndjson" in accept:
+                    self.send_generate_stream()
+                else:
+                    self.send_json(generate_png_outputs(self.state))
             except Exception as exc:
                 self.send_text(str(exc), status=500, content_type="text/plain; charset=utf-8")
             return

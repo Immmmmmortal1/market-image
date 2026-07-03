@@ -10,9 +10,46 @@
     {
       "name": "xiaohongshu-clean-discover-phone",
       "layout": "clean-discover-phone",
-      "headline_small": "发现",
-      "headline_large": "多元兴趣方式",
-      "prompt": "画布是竖版商店图，白到浅灰背景，整体很干净。顶部是营销文案，两行结构：小字 发现，大字 多元兴趣方式。中间是一个大手机 mockup，占画面核心位置。手机里放的是 App 首页截图，截图被裁进手机屏幕区域。底部保留手机导航栏和红色加号按钮，强化产品识别。背景没有复杂装饰，只靠轻微阴影和手机圆角制造质感。"
+      "headline_small": "更快上手",
+      "headline_large": "核心功能\n一目了然",
+      "variants": [
+        {
+          "headline_small": "更快上手",
+          "headline_large": "核心功能\n一目了然",
+          "phone_tilt": "-3deg",
+          "phone_top": "468px",
+          "phone_shift_x": "42px",
+          "badge": "Feature 01"
+        },
+        {
+          "headline_small": "沉浸体验",
+          "headline_large": "细节也在\n替你着想",
+          "phone_tilt": "4.5deg",
+          "phone_top": "448px",
+          "phone_shift_x": "28px",
+          "copy_top": "118px",
+          "badge": "Feature 02"
+        },
+        {
+          "headline_small": "持续更新",
+          "headline_large": "用起来\n更省心",
+          "phone_tilt": "-1.5deg",
+          "phone_top": "462px",
+          "phone_shift_x": "52px",
+          "copy_left": "92px",
+          "badge": "Feature 03"
+        },
+        {
+          "headline_small": "随时随地",
+          "headline_large": "打开即用\n不用等",
+          "phone_tilt": "2deg",
+          "phone_top": "454px",
+          "phone_shift_x": "18px",
+          "copy_top": "136px",
+          "badge": "Feature 04"
+        }
+      ],
+      "prompt": "Editorial 竖版商店图：左对齐双层文案（小字 eyebrow + 大字 benefit），背景从 App 截图主色提取柔和渐变，手机 mockup 带轻微旋转与层次阴影，每张图构图略有变化，适合工具、效率、内容类 App。"
     },
     {
       "name": "purple-live-phone",

@@ -17,3 +17,7 @@ Supported layouts:
 - `purple-live-phone`
 - `spotify-pink-series`
 - `element-dark-glow-series`
+
+Built-in packs:
+
+- `default-googleplay-prompt-pack`
