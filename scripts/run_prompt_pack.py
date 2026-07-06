@@ -30,6 +30,7 @@ DEFAULT_CANVAS = {"width": 1242, "height": 2208}
 DEFAULT_PREVIEW_HOST = "127.0.0.1"
 DEFAULT_PREVIEW_PORT = 8765
 OVERRIDES_FILENAME = "overrides.json"
+AUTO_CREATIVE_TEMPLATE_NAME = "__auto_creative__"
 CHROME_CANDIDATES = [
     Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
     Path("/Applications/Chromium.app/Contents/MacOS/Chromium"),
@@ -52,6 +53,9 @@ def load_pack(pack_dir: Path) -> dict:
     for item in templates:
         if not isinstance(item, dict) or not item.get("name"):
             raise RuntimeError("Each prompt template must include name")
+    for item in data.get("design_references") or []:
+        if not isinstance(item, dict) or not item.get("id") or not item.get("title"):
+            raise RuntimeError("Each design reference must include id and title")
     return data
 
 
@@ -62,6 +66,29 @@ def canvas_size(pack: dict) -> tuple[int, int]:
     if width <= 0 or height <= 0:
         raise RuntimeError("canvas.width and canvas.height must be positive")
     return width, height
+
+
+def design_references(pack: dict) -> list[dict]:
+    references: list[dict] = []
+    for item in pack.get("design_references") or []:
+        if not isinstance(item, dict):
+            continue
+        references.append(
+            {
+                "id": str(item.get("id") or ""),
+                "title": str(item.get("title") or ""),
+                "source_template": str(item.get("source_template") or ""),
+                "category": str(item.get("category") or ""),
+                "suitable_for": list(item.get("suitable_for") or []),
+                "visual_rules": list(item.get("visual_rules") or []),
+                "composition_rules": list(item.get("composition_rules") or []),
+                "reusable_elements": list(item.get("reusable_elements") or []),
+                "hard_constraints": list(item.get("hard_constraints") or []),
+                "quality_checks": list(item.get("quality_checks") or []),
+                "prompt_summary": str(item.get("prompt_summary") or ""),
+            }
+        )
+    return references
 
 
 def list_prompt_packs() -> list[dict]:
@@ -82,6 +109,7 @@ def list_prompt_packs() -> list[dict]:
                     "mode": pack.get("mode"),
                     "canvas": {"width": width, "height": height},
                     "template_count": len(pack.get("templates") or []),
+                    "design_reference_count": len(design_references(pack)),
                     "notes": pack.get("notes") or "",
                 }
             )
@@ -1814,7 +1842,7 @@ def render_html_file(
 
 def selected_templates(pack: dict, selected_template_name: str | None = None) -> list[dict]:
     templates = pack["templates"]
-    if not selected_template_name:
+    if not selected_template_name or selected_template_name == AUTO_CREATIVE_TEMPLATE_NAME:
         return templates
     selected = [item for item in templates if str(item.get("name")) == selected_template_name]
     if not selected:
@@ -1852,6 +1880,32 @@ def build_jobs(
             }
         )
     return jobs
+
+
+def choose_campaign_template(pack: dict, screenshots: list[Path]) -> dict:
+    templates = pack["templates"]
+    preferred = [
+        "xiaohongshu-clean-discover-phone",
+        "douyin-low-price-card",
+        "purple-live-phone",
+        "spotify-pink-series",
+        "element-dark-glow-series",
+    ]
+    by_name = {str(item.get("name")): item for item in templates if isinstance(item, dict)}
+    for name in preferred:
+        if name in by_name:
+            return by_name[name]
+    return templates[0]
+
+
+def build_auto_creative_jobs(
+    pack: dict,
+    screenshots: list[Path],
+    output_dir: Path,
+    copy_map: dict[str, str],
+) -> list[dict]:
+    template = choose_campaign_template(pack, screenshots)
+    return build_jobs(pack, screenshots, output_dir, copy_map, str(template["name"]))
 
 
 def write_preview_index(output_dir: Path, jobs: list[dict], width: int, height: int) -> Path:
@@ -2232,6 +2286,8 @@ def template_for_index(pack: dict, index: int, selected_template_name: str | Non
 
 
 def template_for_state_index(state: dict, index: int) -> dict:
+    if state.get("selected_template_name") == AUTO_CREATIVE_TEMPLATE_NAME and state.get("campaign_template_name"):
+        return template_for_index(state["pack"], index, state.get("campaign_template_name"))
     return template_for_index(state["pack"], index, state.get("selected_template_name"))
 
 
@@ -2404,7 +2460,7 @@ def render_edit_page(state: dict, index_key: str) -> str:
           <button type="submit">保存并刷新预览</button>
           <button class="secondary" type="button" id="reset">重置</button>
           <a class="button secondary" href="/preview">返回预览</a>
-          <a class="button secondary" href="/">返回选模板</a>
+          <a class="button secondary" href="/templates">手动选模板</a>
         </div>
       </form>
     </aside>
@@ -2589,7 +2645,36 @@ def render_template_selection_page(state: dict) -> str:
 """
 
 
+def render_auto_creative_preview_page(state: dict) -> str:
+    state["selected_template_name"] = AUTO_CREATIVE_TEMPLATE_NAME
+    render_all_preview_html(state)
+    index_path = state["output_dir"] / "index.html"
+    content = index_path.read_text(encoding="utf-8")
+    campaign = html.escape(str(state.get("campaign_template_name") or "auto"))
+    banner = """
+  <section style="max-width:1180px;margin:0 auto 18px;padding:16px 18px;border-radius:18px;background:#111318;color:white;box-shadow:0 18px 50px rgba(25,31,45,.16);">
+    <strong>随机创意市场图集合</strong>
+    <span style="margin-left:10px;color:#cfd6e6;">同一 App 使用统一视觉系统；当前 campaign：__CAMPAIGN__。想固定某一套时可进入手动模板页。</span>
+    <a href="/templates" style="margin-left:14px;color:#8fb3ff;font-weight:800;text-decoration:none;">手动选择模板</a>
+  </section>
+""".replace("__CAMPAIGN__", campaign)
+    content = content.replace("<main class=\"grid\">", f"{banner}\n  <main class=\"grid\">", 1)
+    content = content.replace("Market Preview", "随机创意市场图集合")
+    return content
+
+
 def refresh_jobs_for_selected_template(state: dict) -> None:
+    if state.get("selected_template_name") == AUTO_CREATIVE_TEMPLATE_NAME:
+        template = choose_campaign_template(state["pack"], state["screenshots"])
+        state["campaign_template_name"] = str(template["name"])
+        state["jobs"] = build_auto_creative_jobs(
+            state["pack"],
+            state["screenshots"],
+            state["output_dir"],
+            state["copy_map"],
+        )
+        return
+    state.pop("campaign_template_name", None)
     state["jobs"] = build_jobs(
         state["pack"],
         state["screenshots"],
@@ -2742,6 +2827,12 @@ class PreviewHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path in {"/", "/index.html"}:
+            try:
+                self.send_text(render_auto_creative_preview_page(self.state))
+            except Exception as exc:
+                self.send_text(str(exc), status=500, content_type="text/plain; charset=utf-8")
+            return
+        if parsed.path == "/templates":
             self.send_text(render_template_selection_page(self.state))
             return
         select_match = re.fullmatch(r"/select/(.+)", parsed.path)
@@ -2752,6 +2843,7 @@ class PreviewHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.state["pack"] = pack
                 self.state["width"], self.state["height"] = canvas_size(pack)
                 self.state["selected_template_name"] = name
+                self.state.pop("campaign_template_name", None)
                 self.state["overrides"] = load_overrides(self.state["output_dir"])
                 render_all_preview_html(self.state)
                 self.send_response(302)
@@ -2864,6 +2956,7 @@ def serve_preview(state: dict, host: str, port: int) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate app market images from local HTML prompt templates.")
     parser.add_argument("--list-packs", action="store_true", help="List built-in prompt packs and stop.")
+    parser.add_argument("--list-references", action="store_true", help="List single-image design references from the prompt pack and stop.")
     parser.add_argument("--prompt-pack-dir", help="Local prompt pack directory. Default: built-in default-googleplay-prompt-pack.")
     parser.add_argument("--screenshots-dir", help="Required directory containing numbered screenshots such as 01.png or 01.jpg.")
     parser.add_argument("--output-dir", help="Default: <screenshots-dir>/newImage")
@@ -2880,17 +2973,33 @@ def main() -> int:
         print(json.dumps({"mode": "list_prompt_packs", "prompt_packs": list_prompt_packs()}, ensure_ascii=False, indent=2))
         return 0
 
+    pack_dir = Path(args.prompt_pack_dir).expanduser().resolve() if args.prompt_pack_dir else DEFAULT_PACK_DIR.resolve()
+    pack = load_pack(pack_dir)
+
+    if args.list_references:
+        print(
+            json.dumps(
+                {
+                    "mode": "list_design_references",
+                    "pack_name": pack.get("pack_name") or pack_dir.name,
+                    "pack_dir": str(pack_dir),
+                    "design_references": design_references(pack),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
     if not args.screenshots_dir:
         raise RuntimeError("--screenshots-dir is required")
     if not args.dry_run and not args.serve_preview and not args.generate:
         raise RuntimeError("Use --dry-run, --serve-preview, or --generate")
 
-    pack_dir = Path(args.prompt_pack_dir).expanduser().resolve() if args.prompt_pack_dir else DEFAULT_PACK_DIR.resolve()
     screenshots_dir = Path(args.screenshots_dir).expanduser().resolve()
     output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else screenshots_dir / "newImage"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    pack = load_pack(pack_dir)
     screenshots = sorted_input_images(screenshots_dir)
     if not screenshots:
         raise RuntimeError("No numbered screenshots found. Use names such as 01.png, 02.jpg, or 03.webp.")

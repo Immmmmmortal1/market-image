@@ -45,6 +45,7 @@ A prompt pack is a folder with `pack.json`.
 - `canvas.width`
 - `canvas.height`
 - `templates`: one or more prompt/layout templates
+- optional `design_references`: single-image design references used as reusable creative memory
 
 Each template must declare:
 
@@ -53,6 +54,20 @@ Each template must declare:
 - optional `headline_small`
 - optional `headline_large`
 - optional `prompt` for human-readable design intent
+
+Each `design_references` item should declare:
+
+- `id`
+- `title`
+- `source_template` when it maps to an implemented renderer
+- `category`
+- `suitable_for`
+- `visual_rules`
+- `composition_rules`
+- `reusable_elements`
+- `hard_constraints`
+- `quality_checks`
+- `prompt_summary`
 
 The default supported layout is:
 
@@ -157,6 +172,23 @@ Before accepting a new template, verify:
 - The screenshot occupies a coordinated portion of the canvas.
 - Overlays are scaled and positioned as part of the composition, not randomly pasted on top.
 
+## Single-Image Design Deposits
+
+When the user provides one excellent market screenshot/reference and asks to沉淀, do not assume it must become a full renderer immediately.
+
+First capture it as a `design_references` item:
+
+- identify the visual idea in one `title`
+- record the app/category it fits
+- split the design into reusable visual rules
+- record composition rules and hard constraints
+- list reusable elements such as 3D badge, phone frame, spotlight card, title style, background texture
+- add quality checks that future random composition must satisfy
+
+Only create or modify a renderer when the user asks to generate that style or when the reference requires concrete HTML/CSS behavior.
+
+Future creative generation should use `design_references` as a constrained design memory: combine rules, but keep screenshot ratio, Google Play canvas, and composition quality locked.
+
 ## Workflow
 
 1. Confirm required screenshot folder.
@@ -221,6 +253,12 @@ List built-in prompt packs:
 
 ```bash
 python3 ~/.codex/skills/market-reference-pack-generator/scripts/run_prompt_pack.py --list-packs
+```
+
+List single-image design references:
+
+```bash
+python3 ~/.codex/skills/market-reference-pack-generator/scripts/run_prompt_pack.py --list-references
 ```
 
 Preview generation jobs without writing PNG files:

@@ -6,6 +6,61 @@
     "width": 1242,
     "height": 2208
   },
+  "design_references": [
+    {
+      "id": "douyin-low-price-spotlight-popout",
+      "title": "低价促销破框 spotlight 浮层",
+      "source_template": "douyin-low-price-card",
+      "category": "deal-ecommerce-local-life",
+      "suitable_for": [
+        "本地生活",
+        "团购",
+        "优惠券",
+        "外卖",
+        "到店优惠",
+        "电商促销"
+      ],
+      "visual_rules": [
+        "高饱和粉红到玫红渐变背景",
+        "细密波点纹理和右下棋盘纹理",
+        "顶部黑底促销小标签",
+        "大号白色粗体标题配黄色手绘下划线",
+        "白色大圆角 App 页面卡片",
+        "夸张 3D spotlight 浮层从截图内容附近弹出"
+      ],
+      "composition_rules": [
+        "Google Play 1242x2208 竖版画布",
+        "用户截图按原始宽高比嵌入",
+        "spotlight 浮层宽度明显超过白色手机底",
+        "浮层左右压到粉色背景上形成破框效果",
+        "浮层必须锚定截图内的内容位置，不能像无关贴纸",
+        "浮层是主卖点强调层，标题和背景服务它"
+      ],
+      "reusable_elements": [
+        "spotlight_popout_card",
+        "pink_deal_badge",
+        "large_grab_button",
+        "hand_drawn_yellow_underline",
+        "dotted_pink_background",
+        "checkerboard_corner_texture"
+      ],
+      "hard_constraints": [
+        "Google Play 1242x2208",
+        "preserve original screenshot aspect ratio",
+        "do not stretch or squash screenshots",
+        "do not make overlays look randomly pasted",
+        "spotlight layer can break the white card only when it remains visually anchored"
+      ],
+      "quality_checks": [
+        "screenshot_aspect_ratio_preserved",
+        "spotlight_breaks_white_card",
+        "spotlight_anchored_to_app_content",
+        "floating_layer_is_main_selling_point",
+        "composition_not_low_effort_collage"
+      ],
+      "prompt_summary": "适合促销类 Google Play 市场图。核心是把截图中的商品/优惠行放大成夸张 3D spotlight 浮层，并让它从白色手机底破框弹出到粉色背景上，同时保持截图比例和整体商店图协调。"
+    }
+  ],
   "templates": [
     {
       "name": "xiaohongshu-clean-discover-phone",

@@ -11,6 +11,10 @@ Required fields:
 - `canvas`
 - `templates`
 
+Optional fields:
+
+- `design_references`: single-image design deposits used as reusable creative memory
+
 Supported layouts:
 
 - `clean-discover-phone`
@@ -30,3 +34,20 @@ All prompt templates must preserve the user's screenshot aspect ratio. Do not st
 For Google Play vertical assets, the default canvas is `1242x2208`. A template should coordinate the screenshot size, title area, frame, whitespace, and overlays so the final image feels designed as one poster. Floating 3D labels and badges are allowed, but they must support the screenshot instead of covering key UI or looking pasted on.
 
 For promotional spotlight templates, the floating layer can be deliberately exaggerated. It should feel like a specific item from the screenshot has been magnified and lifted out of the app UI. It may break out of the screenshot and white phone/card background, but it must stay visually anchored to the app content and preserve the screenshot's original aspect ratio.
+
+## Single-Image Design References
+
+Use `design_references` when one excellent market image should be remembered without immediately creating a full renderer.
+
+Each reference should capture:
+
+- `id` and `title`
+- `category` and `suitable_for`
+- `visual_rules`
+- `composition_rules`
+- `reusable_elements`
+- `hard_constraints`
+- `quality_checks`
+- `prompt_summary`
+
+These references are the future random-composition source of truth. They describe reusable design atoms, not finished image templates.

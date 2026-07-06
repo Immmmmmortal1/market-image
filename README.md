@@ -40,3 +40,13 @@ python3 scripts/run_prompt_pack.py \
 ```
 
 PNG outputs are written to `<screenshots-dir>/newImage/` by default.
+
+## Design References
+
+Single excellent market images can be deposited as reusable design references in the default prompt pack. List them with:
+
+```bash
+python3 scripts/run_prompt_pack.py --list-references
+```
+
+References capture visual rules, composition rules, reusable elements, hard constraints, and quality checks. They are intended to feed future constrained-random market image generation without requiring every reference to become a full template immediately.
